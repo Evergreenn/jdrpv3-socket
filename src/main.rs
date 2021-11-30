@@ -18,7 +18,7 @@ use ws::{
     Result,
     Sender,
 };
-// use std::time::SystemTime;
+use chrono::{Utc};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Room {
@@ -35,7 +35,7 @@ struct Server {
 pub struct Messages {
     pub message: String,
     pub from: String,
-    // pub date: Option<SystemTime>,
+    pub date: i64,
     // pub room_date: Option<SystemTime>,
 }
 
@@ -55,6 +55,7 @@ impl Handler for Server {
         let response = Messages {
             message: format!("game created by: {}", self.master),
             from: "Admin".into(),
+            date: Utc::now().timestamp_millis()
         };
         let stringify = serde_json::to_string(&response).unwrap();
         self.out.send(stringify).unwrap();
@@ -73,6 +74,7 @@ impl Handler for Server {
         let response = Messages {
             message: format!("{} is connected", self.user),
             from: "Admin".into(),
+            date:Utc::now().timestamp_millis()
         };
 
         let stringify = serde_json::to_string(&response).unwrap();
@@ -88,6 +90,7 @@ impl Handler for Server {
         let response = Messages {
             message: raw_message,
             from: "User".into(),
+            date:Utc::now().timestamp_millis()
         };
 
         let stringify = serde_json::to_string(&response).unwrap();
@@ -116,6 +119,7 @@ impl Handler for Server {
         let response = Messages {
             message: format!("{} is deconnected", self.user),
             from: "Admin".into(),
+            date:Utc::now().timestamp_millis()
         };
 
         let stringify = serde_json::to_string(&response).unwrap();
