@@ -4,6 +4,7 @@ extern crate dotenv_codegen;
 mod claim;
 mod redis_c;
 
+use chrono::Utc;
 use redis_c::*;
 use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
@@ -18,7 +19,6 @@ use ws::{
     Result,
     Sender,
 };
-use chrono::{Utc};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Room {
@@ -32,8 +32,24 @@ struct Server {
 }
 
 #[derive(Serialize, Deserialize)]
+enum State {
+    Log,
+    Console,
+}
+
+impl std::fmt::Display for State {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            State::Log => write!(f, "Log"),
+            State::Console => write!(f, "Console"),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct Messages {
     pub message: String,
+    pub is_admin: bool,
     pub from: String,
     pub date: i64,
     // pub room_date: Option<SystemTime>,
@@ -47,39 +63,70 @@ struct Args {
     jwt: String,
 }
 
+pub fn create_message(i: &Sender, msg: String, from: String, is_broadcast: bool) -> Result<()> {
+    let response = Messages {
+        message: msg,
+        is_admin: false,
+        from: from,
+        date: Utc::now().timestamp_millis(),
+    };
+    let resp = serde_json::to_string(&response).unwrap();
+
+    match is_broadcast {
+        true => i.broadcast(resp),
+        false => i.send(resp),
+    }
+}
+
+pub fn create_log_message(i: &Sender, msg: String, is_broadcast: bool) -> Result<()> {
+    let response = Messages {
+        message: msg,
+        is_admin: true,
+        from: State::Log.to_string(),
+        date: Utc::now().timestamp_millis(),
+    };
+    let resp = serde_json::to_string(&response).unwrap();
+
+    match is_broadcast {
+        true => i.broadcast(resp),
+        false => i.send(resp),
+    }
+}
+
+pub fn create_console_message(i: &Sender, msg: String) -> Result<()> {
+    let response = Messages {
+        message: msg,
+        is_admin: true,
+        from: State::Console.to_string(),
+        date: Utc::now().timestamp_millis(),
+    };
+    let resp = serde_json::to_string(&response).unwrap();
+
+    i.send(resp)
+}
+
 impl Handler for Server {
     fn on_open(&mut self, hs: Handshake) -> Result<()> {
-        // We have a new connection, so we increment the connection counter
-        // Ok(self.count.set(self.count.get() + 1))
-
-        let response = Messages {
-            message: format!("game created by: {}", self.master),
-            from: "Admin".into(),
-            date: Utc::now().timestamp_millis()
-        };
-        let stringify = serde_json::to_string(&response).unwrap();
-        self.out.send(stringify).unwrap();
+        create_log_message(
+            &self.out,
+            format!("game created by: {}", self.master),
+            false,
+        )
+        .unwrap();
 
         let jwt_token = hs.request.resource().split("=").collect::<Vec<_>>()[1];
         let jwt_struct = claim::decode_jwt(&jwt_token).unwrap();
 
+        if jwt_struct.username == self.master {
+            create_console_message(&self.out, String::from("")).unwrap();
+        }
+
         // hs.request.header(header: &str)
         self.user = jwt_struct.username;
         let co = redis_co::get_redis_co();
-
         redis_co::get_set_h_to_redis(co, String::from(&*self.user));
 
-        // println!("{:#?}", String::from(&*self.user));
-        // println!("{:#?}", self.out.connection_id());
-        let response = Messages {
-            message: format!("{} is connected", self.user),
-            from: "Admin".into(),
-            date:Utc::now().timestamp_millis()
-        };
-
-        let stringify = serde_json::to_string(&response).unwrap();
-
-        self.out.broadcast(stringify).unwrap();
+        create_log_message(&self.out, format!("{} is connected", self.user), true).unwrap();
 
         Ok(())
     }
@@ -87,16 +134,7 @@ impl Handler for Server {
     fn on_message(&mut self, msg: Message) -> Result<()> {
         let raw_message = msg.into_text()?;
 
-        let response = Messages {
-            message: raw_message,
-            from: "User".into(),
-            date:Utc::now().timestamp_millis()
-        };
-
-        let stringify = serde_json::to_string(&response).unwrap();
-
-        // Echo the to all
-        self.out.broadcast(stringify)
+        create_message(&self.out, raw_message, self.user.to_string(), true)
     }
 
     fn on_close(&mut self, code: CloseCode, reason: &str) {
@@ -116,33 +154,19 @@ impl Handler for Server {
         let co = redis_co::get_redis_co();
         redis_co::remove_h_to_redis(co, String::from(&*self.user));
 
-        let response = Messages {
-            message: format!("{} is deconnected", self.user),
-            from: "Admin".into(),
-            date:Utc::now().timestamp_millis()
-        };
-
-        let stringify = serde_json::to_string(&response).unwrap();
-
-        self.out.broadcast(stringify).unwrap();
-
-
+        create_log_message(&self.out, format!("{} is deconnected", self.user), true).unwrap();
     }
 
     fn on_error(&mut self, err: Error) {
         println!("The server encountered an error: {:?}", err);
-
-        // The connection is going down, so we need to decrement the count
     }
 }
 
-// Now, instead of a closure, the Factory returns a new instance of our Handler.
 fn main() {
     let args = Args::from_args();
     println!("{:#?}", args);
 
     let addr = args.ws;
-    // let jwt = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VybmFtZSI6IlllaHJhIiwicGVybWlzc2lvbnMiOlsiT1BfR0VUX1NFQ1VSRURfSU5GTyIsIlJPTEVfVVNFUiJdLCJleHAiOjE2MzgyNTgxNDh9.hhI09t_A29HxiaBTkaxTD1wp-u8uP0DljRW5F_exaPI";
     let jwt = args.jwt;
     let jwt_struct = claim::decode_jwt(&jwt).unwrap();
 
