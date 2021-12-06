@@ -155,6 +155,11 @@ impl Handler for Server {
         redis_co::remove_h_to_redis(co, String::from(&*self.user));
 
         create_log_message(&self.out, format!("{} is deconnected", self.user), true).unwrap();
+
+        if self.user == self.master {
+            self.out.shutdown().unwrap();
+        }
+
     }
 
     fn on_error(&mut self, err: Error) {
@@ -187,4 +192,6 @@ fn main() {
         user: String::from(""),
     })
     .unwrap()
+
+
 }
