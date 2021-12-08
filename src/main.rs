@@ -20,6 +20,35 @@ use ws::{
     Sender,
 };
 
+fn main() {
+    let args = Args::from_args();
+    println!("{:#?}", args);
+
+    let addr = args.ws;
+    let jwt = args.jwt;
+    let jwt_struct = claim::decode_jwt(&jwt).unwrap();
+
+    let r = Room { items: vec![] };
+    let to_store = serde_json::to_string(&r).unwrap();
+
+    let mut co = redis_co::get_redis_co();
+    let _: () = redis::cmd("HSET")
+        .arg("ROOM")
+        .arg("people")
+        .arg(to_store)
+        .query(&mut co)
+        .unwrap();
+
+    listen( addr, |out| Server {
+        out: out,
+        master: jwt_struct.user_id.clone(),
+        user: String::from(""),
+        user_name: String::from(""),
+        game_id: args.game_id.clone(),
+    })
+    .unwrap()
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct Room {
     items: Vec<String>,
@@ -29,6 +58,8 @@ struct Server {
     out: Sender,
     master: String,
     user: String,
+    user_name: String,
+    game_id: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -61,6 +92,8 @@ struct Args {
     ws: String,
     #[structopt(short = "t", long = "jwt")]
     jwt: String,
+    #[structopt(short = "g", long = "gameid")]
+    game_id: String,
 }
 
 pub fn create_message(i: &Sender, msg: String, from: String, is_broadcast: bool) -> Result<()> {
@@ -107,26 +140,36 @@ pub fn create_console_message(i: &Sender, msg: String) -> Result<()> {
 
 impl Handler for Server {
     fn on_open(&mut self, hs: Handshake) -> Result<()> {
-        create_log_message(
-            &self.out,
-            format!("game created by: {}", self.master),
-            false,
-        )
-        .unwrap();
 
         let jwt_token = hs.request.resource().split("=").collect::<Vec<_>>()[1];
         let jwt_struct = claim::decode_jwt(&jwt_token).unwrap();
 
-        if jwt_struct.username == self.master {
+        println!("{}", jwt_struct.user_id);
+        println!("{}", self.master);
+
+        self.user = jwt_struct.user_id;
+        self.user_name = jwt_struct.username;
+
+        if self.user == self.master {
             create_console_message(&self.out, String::from("")).unwrap();
+            create_log_message(
+                &self.out,
+                String::from(format!("give this id to your players: {}", self.game_id)),
+                false,
+            )
+            .unwrap();
         }
 
         // hs.request.header(header: &str)
-        self.user = jwt_struct.username;
         let co = redis_co::get_redis_co();
-        redis_co::get_set_h_to_redis(co, String::from(&*self.user));
+        redis_co::get_set_h_to_redis(co, self.user.to_string());
 
-        create_log_message(&self.out, format!("{} is connected", self.user), true).unwrap();
+        create_log_message(
+            &self.out,
+            format!("{} is connected", self.user_name),
+            true,
+        )
+        .unwrap();
 
         Ok(())
     }
@@ -134,7 +177,12 @@ impl Handler for Server {
     fn on_message(&mut self, msg: Message) -> Result<()> {
         let raw_message = msg.into_text()?;
 
-        create_message(&self.out, raw_message, self.user.to_string(), true)
+        create_message(
+            &self.out,
+            raw_message,
+            self.user_name.to_string(),
+            true,
+        )
     }
 
     fn on_close(&mut self, code: CloseCode, reason: &str) {
@@ -152,46 +200,21 @@ impl Handler for Server {
             _ => println!("The client encountered an error: {}", reason),
         };
         let co = redis_co::get_redis_co();
-        redis_co::remove_h_to_redis(co, String::from(&*self.user));
+        redis_co::remove_h_to_redis(co, self.user.to_string());
 
-        create_log_message(&self.out, format!("{} is deconnected", self.user), true).unwrap();
+        create_log_message(
+            &self.out,
+            format!("{} is deconnected", self.user_name),
+            true,
+        )
+        .unwrap();
 
         if self.user == self.master {
             self.out.shutdown().unwrap();
         }
-
     }
 
     fn on_error(&mut self, err: Error) {
         println!("The server encountered an error: {:?}", err);
     }
-}
-
-fn main() {
-    let args = Args::from_args();
-    println!("{:#?}", args);
-
-    let addr = args.ws;
-    let jwt = args.jwt;
-    let jwt_struct = claim::decode_jwt(&jwt).unwrap();
-
-    let r = Room { items: vec![] };
-    let to_store = serde_json::to_string(&r).unwrap();
-
-    let mut co = redis_co::get_redis_co();
-    let _: () = redis::cmd("HSET")
-        .arg("ROOM")
-        .arg("people")
-        .arg(to_store)
-        .query(&mut co)
-        .unwrap();
-
-    listen(addr, |out| Server {
-        out: out,
-        master: jwt_struct.username.clone(),
-        user: String::from(""),
-    })
-    .unwrap()
-
-
 }

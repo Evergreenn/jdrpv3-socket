@@ -10,19 +10,19 @@ const SECRET: &str = "SECRET";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct Claims {
+    pub user_id: String,
     pub username: String,
     pub permissions: Vec<String>,
     exp: i64,
 }
 
 impl Claims {
-    pub fn new(username: String, permissions: Vec<String>) -> Self {
+    pub fn new(user_id:String, username: String, permissions: Vec<String>) -> Self {
         Self {
+            user_id,
             username,
             permissions,
-            exp: (Utc::now()
-                + Duration::hours(dotenv!("TOKEN_DURATION_TIME_HOURS").parse::<i64>().unwrap()))
-            .timestamp(),
+            exp: (Utc::now() + Duration::hours(dotenv!("TOKEN_DURATION_TIME_HOURS").parse::<i64>().unwrap())).timestamp(),
         }
     }
 }
