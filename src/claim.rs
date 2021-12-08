@@ -2,7 +2,7 @@
 // use actix_web::Error;
 use chrono::{Duration, Utc};
 use jsonwebtoken::errors::Error;
-use jsonwebtoken::{self, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{self, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 // Token lifetime and Secret key are hardcoded for clarity
 // const JWT_EXPIRATION_HOURS: i64 = 24;
