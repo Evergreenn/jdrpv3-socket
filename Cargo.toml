@@ -13,5 +13,6 @@ serde_json = "1.0.71"
 chrono = "0.4.15"
 dotenv = "0.15.0"
 dotenv_codegen = "0.15.0"
-ws = "0.9.1"
+# ws = "0.9.1"
+ws = {git = "https://github.com/Evergreenn/ws-rs"}
 redis = "0.21.4"

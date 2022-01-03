@@ -1,6 +1,6 @@
 // use actix_web::error::ErrorUnauthorized;
 // use actix_web::Error;
-use chrono::{Duration, Utc};
+// use chrono::{Duration, Utc};
 use jsonwebtoken::errors::Error;
 use jsonwebtoken::{self, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
@@ -16,16 +16,16 @@ pub(crate) struct Claims {
     exp: i64,
 }
 
-impl Claims {
-    pub fn new(user_id:String, username: String, permissions: Vec<String>) -> Self {
-        Self {
-            user_id,
-            username,
-            permissions,
-            exp: (Utc::now() + Duration::hours(dotenv!("TOKEN_DURATION_TIME_HOURS").parse::<i64>().unwrap())).timestamp(),
-        }
-    }
-}
+// impl Claims {
+//     pub fn new(user_id:String, username: String, permissions: Vec<String>) -> Self {
+//         Self {
+//             user_id,
+//             username,
+//             permissions,
+//             exp: (Utc::now() + Duration::hours(dotenv!("TOKEN_DURATION_TIME_HOURS").parse::<i64>().unwrap())).timestamp(),
+//         }
+//     }
+// }
 
 // pub(crate) fn create_jwt(claims: Claims) -> Result<String, Error> {
 //     let encoding_key = EncodingKey::from_secret(SECRET.as_bytes());
