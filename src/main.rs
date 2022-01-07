@@ -90,6 +90,21 @@ pub struct Messages {
     // pub room_date: Option<SystemTime>,
 }
 
+#[derive(Serialize, Deserialize)]
+pub enum ConsoleScope {
+    PlayerConnection,
+    PlayerLeave,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ConsoleMessages {
+    pub message: String,
+    pub scope: ConsoleScope,
+    pub from: String,
+    // pub date: i64,
+    // pub room_date: Option<SystemTime>,
+}
+
 #[derive(StructOpt, Debug)]
 struct Args {
     #[structopt(short = "w", long = "websocket")]
@@ -142,6 +157,26 @@ pub fn create_console_message(i: &Sender, msg: String) -> Result<()> {
     i.send(resp)
 }
 
+pub fn send_owner_console_message(i: &Sender, game_id: String, msg: String, scope: ConsoleScope) -> Result<()> {
+
+    let co = redis_co::get_redis_co();
+
+    let ids = redis_co::get_token_connectionid(
+        game_id,
+        String::from("admin"),
+        co,
+    );
+
+    let response = ConsoleMessages {
+        message: msg,
+        from: State::Game.to_string(),
+        scope: scope
+    };
+    let resp = serde_json::to_string(&response).unwrap();
+
+    i.unicast(resp, ids.0, ids.1)
+}
+
 impl Handler for Server {
     fn on_open(&mut self, hs: Handshake) -> Result<()> {
         let jwt_token = hs.request.resource().split("=").collect::<Vec<_>>()[1];
@@ -172,7 +207,6 @@ impl Handler for Server {
                 co,
             );
         } else {
-
             redis_co::get_set_h_to_redis(
                 self.game_id.to_string(),
                 self.user.to_string(),
@@ -180,26 +214,9 @@ impl Handler for Server {
                 self.out.connection_id(),
                 co,
             );
+            let msg = format!("{{ \"user_id\": \"{}\", \"game_id\": \"{}\" }}", self.user.to_string(), self.game_id.to_string());
 
-            let co = redis_co::get_redis_co();
-
-            let ids = redis_co::get_token_connectionid(
-                self.game_id.to_string(),
-                String::from("admin"),
-                co,
-            );
-
-            let response = Messages {
-                message: format!("{{ \"user_id\": \"{}\", \"game_id\": \"{}\" }}", self.user.to_string(), self.game_id.to_string()),
-                is_admin: true,
-                from: State::Game.to_string(),
-                date: Utc::now().timestamp_millis(),
-            };
-
-            let resp = serde_json::to_string(&response).unwrap();
-
-
-            self.out.unicast(resp, ids.0, ids.1).unwrap();
+            send_owner_console_message(&self.out, self.game_id.to_string(), msg, ConsoleScope::PlayerConnection).unwrap();
         }
 
         // hs.request.header(header: &str)
@@ -222,7 +239,9 @@ impl Handler for Server {
         // So, you may not normally want to display `reason` to the user,
         // but let's assume that we know that `reason` is human-readable.
         let _ = match code {
-            CloseCode::Normal => println!("The client is done with the connection."),
+            CloseCode::Normal => {
+                println!("The client is done with the connection.")
+            }
             CloseCode::Away => println!("The client is leaving the site."),
             CloseCode::Abnormal => {
                 println!("Closing handshake failed! Unable to obtain closing status from client.")
@@ -239,9 +258,10 @@ impl Handler for Server {
         )
         .unwrap();
 
-        // if self.user == self.master {
-        //     self.out.shutdown().unwrap();
-        // }
+        if self.user != self.master {
+            let msg = format!("{{ \"user_id\": \"{}\", \"game_id\": \"{}\" }}", self.user.to_string(), self.game_id.to_string());
+            send_owner_console_message(&self.out, self.game_id.to_string(), msg, ConsoleScope::PlayerLeave).unwrap();
+        }
     }
 
     fn on_error(&mut self, err: Error) {
