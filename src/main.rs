@@ -229,6 +229,8 @@ impl Handler for Server {
     fn on_message(&mut self, msg: Message) -> Result<()> {
         let raw_message = msg.into_text()?;
 
+        println!("{}", raw_message);
+
         create_message(&self.out, raw_message, self.user_name.to_string(), true)
     }
 
