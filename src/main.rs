@@ -7,6 +7,7 @@ mod redis_c;
 use chrono::Utc;
 use redis_c::*;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use structopt::StructOpt;
 use ws::{
     listen,
@@ -19,6 +20,8 @@ use ws::{
     Result,
     Sender,
 };
+
+use rand::prelude::*;
 
 fn main() {
     let args = Args::from_args();
@@ -113,6 +116,14 @@ struct Args {
     jwt: String,
     #[structopt(short = "g", long = "gameid")]
     game_id: String,
+}
+
+#[derive(Serialize)]
+pub struct RollMessage {
+    player_id: String,
+    stat_rolled: u64,
+    roll_type: String,
+    roll_result: u8
 }
 
 pub fn create_message(i: &Sender, msg: String, from: String, is_broadcast: bool) -> Result<()> {
@@ -228,10 +239,36 @@ impl Handler for Server {
 
     fn on_message(&mut self, msg: Message) -> Result<()> {
         let raw_message = msg.into_text()?;
+        
+        let v: Value = serde_json::from_str(&raw_message).unwrap(); 
 
-        println!("{}", raw_message);
+        let message = match &v["type"] {
+            Value::String(c) => {
+                match c.as_str() {
+                    "roll" => {
+                        let mut rng = thread_rng();
+                        let roll = rng.gen_range(1..=100);
+                        
+                        let rm = RollMessage {
+                            player_id: v["player_id"].to_string(),
+                            stat_rolled: v["stat_rolled"].as_u64().unwrap(),
+                            roll_type: c.to_string(),
+                            roll_result: roll
+                        };
 
-        create_message(&self.out, raw_message, self.user_name.to_string(), true)
+                        let resp = serde_json::to_string(&rm).unwrap();
+                        resp
+                        
+                    },
+                    _=> {raw_message}
+                }
+            },
+            _ => {raw_message}
+        };
+        
+        println!("{:#?}", v);
+
+        create_message(&self.out, message, self.user_name.to_string(), true)
     }
 
     fn on_close(&mut self, code: CloseCode, reason: &str) {
