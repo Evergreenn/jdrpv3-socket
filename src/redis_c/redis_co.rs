@@ -13,7 +13,7 @@ pub fn get_set_h_to_redis(
     playersocket_tokenid: Token,
     playerconnection_id: u32,
     mut co: Connection,
-) -> () {
+) {
     let info = vec![
         usize::from(playersocket_tokenid),
         playerconnection_id as usize,
@@ -58,7 +58,7 @@ pub fn get_token_connectionid(
     (Token::from(rslt[0] as usize), u32::from(rslt[1]))
 }
 
-pub fn remove_h_to_redis(mut co: Connection, user_id: String) -> () {
+pub fn remove_h_to_redis(mut co: Connection, user_id: String) {
     let room_from_redis: String = redis::cmd("HGET")
         .arg("ROOM")
         .arg("people")

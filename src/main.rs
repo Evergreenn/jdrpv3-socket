@@ -7,7 +7,7 @@ mod redis_c;
 use chrono::Utc;
 use redis_c::*;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value};
 use structopt::StructOpt;
 use ws::{
     listen,
@@ -43,7 +43,7 @@ fn main() {
     //     .unwrap();
 
     listen(addr, |out| Server {
-        out: out,
+        out,
         master: jwt_struct.user_id.clone(),
         user: String::from(""),
         user_name: String::from(""),
@@ -130,7 +130,7 @@ pub fn create_message(i: &Sender, msg: String, from: String, is_broadcast: bool)
     let response = Messages {
         message: msg,
         is_admin: false,
-        from: from,
+        from,
         date: Utc::now().timestamp_millis(),
     };
     let resp = serde_json::to_string(&response).unwrap();
@@ -181,7 +181,7 @@ pub fn send_owner_console_message(i: &Sender, game_id: String, msg: String, scop
     let response = ConsoleMessages {
         message: msg,
         from: State::Game.to_string(),
-        scope: scope
+        scope
     };
     let resp = serde_json::to_string(&response).unwrap();
 
@@ -190,8 +190,8 @@ pub fn send_owner_console_message(i: &Sender, game_id: String, msg: String, scop
 
 impl Handler for Server {
     fn on_open(&mut self, hs: Handshake) -> Result<()> {
-        let jwt_token = hs.request.resource().split("=").collect::<Vec<_>>()[1];
-        let jwt_struct = claim::decode_jwt(&jwt_token).unwrap();
+        let jwt_token = hs.request.resource().split('=').collect::<Vec<_>>()[1];
+        let jwt_struct = claim::decode_jwt(jwt_token).unwrap();
 
         println!("{}", jwt_struct.user_id);
         println!("{}", self.master);
@@ -205,7 +205,7 @@ impl Handler for Server {
             create_console_message(&self.out, String::from("")).unwrap();
             create_log_message(
                 &self.out,
-                String::from(format!("give this id to your players: {}", self.game_id)),
+                format!("give this id to your players: {}", self.game_id),
                 false,
             )
             .unwrap();
@@ -256,9 +256,7 @@ impl Handler for Server {
                             roll_result: roll
                         };
 
-                        let resp = serde_json::to_string(&rm).unwrap();
-                        resp
-                        
+                        serde_json::to_string(&rm).unwrap()
                     },
                     _=> {raw_message}
                 }
@@ -294,7 +292,7 @@ impl Handler for Server {
             &self.out,
             format!("{} is deconnected", self.user_name),
             true,
-        )
+        ) 
         .unwrap();
 
         if self.user != self.master {
