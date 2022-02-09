@@ -7,7 +7,7 @@ mod redis_c;
 use chrono::Utc;
 use redis_c::*;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value};
+use serde_json::Value;
 use structopt::StructOpt;
 use ws::{
     listen,
@@ -31,16 +31,8 @@ fn main() {
     let jwt = args.jwt;
     let jwt_struct = claim::decode_jwt(&jwt).unwrap();
 
-    // let r = Room { items: vec![] };
-    // let to_store = serde_json::to_string(&r).unwrap();
-
-    // let mut co = redis_co::get_redis_co();
-    // let _: () = redis::cmd("HSET")
-    //     .arg(args.game_id.clone())
-    //     .arg("admin")
-    //     .arg(to_store)
-    //     .query(&mut co)
-    //     .unwrap();
+    let co = redis_co::get_redis_co();
+    redis_co::register_address_to_redis(args.game_id.clone(), &addr, co);
 
     listen(addr, |out| Server {
         out,
@@ -57,6 +49,7 @@ struct Room {
     items: Vec<String>,
 }
 
+/// Server object for keeping track of user and game informations
 struct Server {
     out: Sender,
     master: String,
@@ -123,7 +116,7 @@ pub struct RollMessage {
     player_id: String,
     stat_rolled: u64,
     roll_type: String,
-    roll_result: u8
+    roll_result: u8,
 }
 
 pub fn create_message(i: &Sender, msg: String, from: String, is_broadcast: bool) -> Result<()> {
@@ -168,20 +161,20 @@ pub fn create_console_message(i: &Sender, msg: String) -> Result<()> {
     i.send(resp)
 }
 
-pub fn send_owner_console_message(i: &Sender, game_id: String, msg: String, scope: ConsoleScope) -> Result<()> {
-
+pub fn send_owner_console_message(
+    i: &Sender,
+    game_id: String,
+    msg: String,
+    scope: ConsoleScope,
+) -> Result<()> {
     let co = redis_co::get_redis_co();
 
-    let ids = redis_co::get_token_connectionid(
-        game_id,
-        String::from("admin"),
-        co,
-    );
+    let ids = redis_co::get_token_connectionid(game_id, String::from("admin"), co);
 
     let response = ConsoleMessages {
         message: msg,
         from: State::Game.to_string(),
-        scope
+        scope,
     };
     let resp = serde_json::to_string(&response).unwrap();
 
@@ -225,9 +218,19 @@ impl Handler for Server {
                 self.out.connection_id(),
                 co,
             );
-            let msg = format!("{{ \"user_id\": \"{}\", \"game_id\": \"{}\" }}", self.user.to_string(), self.game_id.to_string());
+            let msg = format!(
+                "{{ \"user_id\": \"{}\", \"game_id\": \"{}\" }}",
+                self.user.to_string(),
+                self.game_id.to_string()
+            );
 
-            send_owner_console_message(&self.out, self.game_id.to_string(), msg, ConsoleScope::PlayerConnection).unwrap();
+            send_owner_console_message(
+                &self.out,
+                self.game_id.to_string(),
+                msg,
+                ConsoleScope::PlayerConnection,
+            )
+            .unwrap();
         }
 
         // hs.request.header(header: &str)
@@ -239,31 +242,27 @@ impl Handler for Server {
 
     fn on_message(&mut self, msg: Message) -> Result<()> {
         let raw_message = msg.into_text()?;
-        
-        let v: Value = serde_json::from_str(&raw_message).unwrap(); 
 
+        let v: Value = serde_json::from_str(&raw_message).unwrap();
         let message = match &v["type"] {
-            Value::String(c) => {
-                match c.as_str() {
-                    "roll" => {
-                        let mut rng = thread_rng();
-                        let roll = rng.gen_range(1..=100);
-                        
-                        let rm = RollMessage {
-                            player_id: v["player_id"].to_string(),
-                            stat_rolled: v["stat_rolled"].as_u64().unwrap(),
-                            roll_type: c.to_string(),
-                            roll_result: roll
-                        };
+            Value::String(c) => match c.as_str() {
+                "roll" => {
+                    let mut rng = thread_rng();
+                    let roll = rng.gen_range(1..=100);
 
-                        serde_json::to_string(&rm).unwrap()
-                    },
-                    _=> {raw_message}
+                    let rm = RollMessage {
+                        player_id: v["player_id"].to_string(),
+                        stat_rolled: v["stat_rolled"].as_u64().unwrap(),
+                        roll_type: c.to_string(),
+                        roll_result: roll,
+                    };
+
+                    serde_json::to_string(&rm).unwrap()
                 }
+                _ => raw_message,
             },
-            _ => {raw_message}
+            _ => raw_message,
         };
-        
         println!("{:#?}", v);
 
         create_message(&self.out, message, self.user_name.to_string(), true)
@@ -292,12 +291,22 @@ impl Handler for Server {
             &self.out,
             format!("{} is deconnected", self.user_name),
             true,
-        ) 
+        )
         .unwrap();
 
         if self.user != self.master {
-            let msg = format!("{{ \"user_id\": \"{}\", \"game_id\": \"{}\" }}", self.user.to_string(), self.game_id.to_string());
-            send_owner_console_message(&self.out, self.game_id.to_string(), msg, ConsoleScope::PlayerLeave).unwrap();
+            let msg = format!(
+                "{{ \"user_id\": \"{}\", \"game_id\": \"{}\" }}",
+                self.user.to_string(),
+                self.game_id.to_string()
+            );
+            send_owner_console_message(
+                &self.out,
+                self.game_id.to_string(),
+                msg,
+                ConsoleScope::PlayerLeave,
+            )
+            .unwrap();
         }
     }
 
